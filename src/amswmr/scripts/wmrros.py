@@ -40,6 +40,8 @@ class WmrRos(Wmr):
     self.new_path  = 1
     self.actions = []
     self.oldTag = 0
+
+    
   def _handleCmdVel(self, msg):
     self.setVel(msg.linear.x, msg.angular.z)
     
@@ -149,33 +151,72 @@ class WmrRos(Wmr):
         self.setWheelVel(-vv,-vv/2)
         print('Levo kolo:' + str(vv))
         '''
-    
-    
+        
+    # Sledenje v točko: smo na zadnjih 20 % prepotovane poti
+    zadnjih_20_procentov = 0
+    # Čakamo na actions 
     if self.actions != []:
       
+      # Če je prvi node samo vzamemo vrednosti
       if self.currentIdx == 0:
         self.sled_rob = self.actions[self.currentIdx][0]
+      # Preverjamo če smo dosegli next_Tag
       next_Tag = self.actions[self.currentIdx][2]     
-      if next_Tag > 100: # Imag
-        if self.prepotovana_pot > self.actions[self.currentIdx][1]/1000.0:
+      # Če je naslednji tag IMAGINAREN
+      if next_Tag > 100: 
+        #Popravilo tocke 105
+        if  (self.actions[self.currentIdx][2] == 105) and (self.prepotovana_pot > self.actions[self.currentIdx][1]/1000.0 + 0.09):
           print('Imag reached')
           self.currentIdx = self.currentIdx + 1
           self.prepotovana_pot = 0.0 
-        elif (next_Tag == 143) or (next_Tag == 142):
+        #Popravilo tocke 106
+        if  (self.actions[self.currentIdx][2] == 106) and (self.prepotovana_pot > self.actions[self.currentIdx][1]/1000.0 - 0.04):
+          print('Imag reached')
+          self.currentIdx = self.currentIdx + 1
+          self.prepotovana_pot = 0.0 
+        #Popravilo tocke 108
+        if  (self.actions[self.currentIdx][2] == 108) and (self.prepotovana_pot > self.actions[self.currentIdx][1]/1000.0 - 0.04):
+          print('Imag reached')
+          self.currentIdx = self.currentIdx + 1
+          self.prepotovana_pot = 0.0 
+        elif self.prepotovana_pot > self.actions[self.currentIdx][1]/1000.0:
+          print('Imag reached')
+          self.currentIdx = self.currentIdx + 1
+          self.prepotovana_pot = 0.0 
+        
+        # Potovanje brez črte
+        elif (next_Tag == 143):
+          # Po 80% prepotovane poti začni iskati črto
+
           if self.prepotovana_pot > 0.8 * self.actions[self.currentIdx][1]/1000.0:
-            if not (left == None or right == None):
-              print('Imag reached')
+            if not (left == None or right == None) and right < 0 :
+              print('Pot spet najdena')
+
               self.currentIdx = self.currentIdx + 1
               self.prepotovana_pot = 0.0 
-              
-          #self.sled_rob = self.actions[self.currentIdx][0]
-      elif next_Tag < 100 and next_Tag > 0 : # Real
+        # Potovanje brez črte
+        elif (next_Tag == 142):
+          # Po 80% prepotovane poti začni iskati črto
+
+          if self.prepotovana_pot > 0.8 * self.actions[self.currentIdx][1]/1000.0:
+
+            if not (left == None or right == None) and left > 0 :
+              print('Pot spet najdena')
+
+              self.currentIdx = self.currentIdx + 1
+              self.prepotovana_pot = 0.0 
+
+
+
+
+      # Če je naslednji tag REALNE 
+      elif next_Tag < 100 and next_Tag > 0 : # 
+        
         if self.tagId == next_Tag:
           print('Real reached')
           self.currentIdx = self.currentIdx + 1
           self.prepotovana_pot = 0.0     
-          #self.sled_rob = self.actions[self.currentIdx][0]
-      #print(str(self.currentIdx) + ' ' + str(len(self.actions)))
+
       if self.currentIdx >= len(self.actions):
         self.actions = []
         self.currentIdx = 0
@@ -190,135 +231,102 @@ class WmrRos(Wmr):
   
     if self.sled_rob == 'levo':
       line_error = left
-      
-      
+      #next_Tag = self.actions[self.currentIdx][2]
+      #if (next_Tag == 105):
+      #  line_error = 1
     elif self.sled_rob == 'desno':
       line_error = right
+      #next_Tag = self.actions[self.currentIdx][2]
+      #if (next_Tag == 105):
+      # line_error = 1
 
-      
+
+    sledenje_tock = False  
     if self.sled_rob == 'sredina':
-      '''
-      x_ref = 0.5
-      y_ref = 0.5
+      next_Tag = self.actions[self.currentIdx][2]
+      if not ((next_Tag == 142) or (next_Tag == 143)):
+        line_error = (left + right)/2
+      else:
+        
+        
+        #print( self.currentIdx )
+        #print([tagPoses[ self.currentIdx[2] ] ])
+        #print(self.actions)
+        #print(self.actions[self.currentIdx])
+        #print( self.actions[self.currentIdx][2])
+        #print( [tagPoses[ self.actions[self.currentIdx][2] ] ])
+        
+        # Določimo koordinate točke v globalnem koordinatnem sistemu
+        ref =  np.array( [tagPoses[ self.actions[self.currentIdx][2] ] ])
+        x_ref = ref[0][0] / 1000
+        y_ref = ref[0][1] / 1000
+        
+        #Popravilo tock 142 in 143 
+        popravek = 0.05
+        if  self.actions[self.currentIdx][2] == 142:
+          x_ref = x_ref +popravek
+          y_ref = y_ref +popravek
+        if self.actions[self.currentIdx][2] == 143:
+          x_ref = x_ref -popravek
+          y_ref = y_ref +popravek
+          
+          
+        # Parametri regulatorja
+        v_max = 0.3
+        Kw = 2.5
+        Kgama = 4.0
+        Kv = 2.0
+        dist_min = 0.3
+        
+        # Razdalja do točke 
+        dist_to = sqrt((self.x -x_ref)**2+(self.y -y_ref)**2)
       
-      dist_to = sqrt((self.x -x_ref)**2+(self.y -y_ref)**2)
+        fi_ref = atan2((y_ref-self.y),(x_ref-self.x))
+        
+        e_fi = wrapToPi(fi_ref - self.fi)
+        
+        
+        w = Kw * (e_fi)
+        v = Kv * dist_to 
+        
+        # Omejimo na maksimalno hitrost
+        if abs(v) > v_max:
+          v = sign(v) * v_max
+        
+        # Pretvorba iz zadnje hitrosti na sprednjo
+        vs = sqrt(w**2 * self.D**2 + v**2)
+        
+        gama_ref = atan2(w*self.D, v)
+        
+        e_gama = wrapToPi(gama_ref - self.gama)
+        ws = Kgama * e_gama
       
-      fi_ref = atan2((y_ref-self.y),(x_ref-self.x))
-      
-      e_fi = wrapToPi(fi_ref - self.fi)
-      
-      K_fi = 1.0
-      
-      gama_ref = K_fi * e_fi
-      
-      K_gama = 2.0
-      ws = K_gama * ( gama_ref - self.gama )
-      
-      
-      Kv = 2.0
-      vs = Kv * dist_to / cos(self.gama)
-      
-      self.setVel(vs, ws)
 
-      
-        18: [1613.0, 373.0, 3.1098572800613353],
-        132: [1306.0, 375.0],
         
+        # Normalizacija na maksimalno hitrost
+        vs = v_max * vs / (abs(vs)+abs(ws))
         
-        137: [1175.0, 244.0],
+        # Implementacija žlajfanja
+        brake = (dist_to/dist_min)**1/2
+        if brake > 1:
+          brake = 1
+          
+        ws = brake*ws
+        vs = brake*vs*abs(cos(e_gama))
 
-      142: [920.0, 1400.0],
-      143: [1130.0, 1400.0],
-        
-        
-        
-      [1306.0, 375.0],
-      1613, 373
-      
-      zk =  np.array( [tagPoses[self.realTag]] )
-      
-      
-      '''
-      #print( self.currentIdx )
-      #print([tagPoses[ self.currentIdx[2] ] ])
-      #print(self.actions)
-      #print(self.actions[self.currentIdx])
-      #print( self.actions[self.currentIdx][2])
-      #print( [tagPoses[ self.actions[self.currentIdx][2] ] ])
-      
-      ref =  np.array( [tagPoses[ self.actions[self.currentIdx][2] ] ])
-      x_ref = ref[0][0] / 1000
-      y_ref = ref[0][1] / 1000
-      #print(x_ref,y_ref)
-      
-      #Popravilo tock
-      popravek = 0.04
-      if  self.actions[self.currentIdx][2] == 142:
-        x_ref = x_ref +popravek
-        y_ref = y_ref +popravek
-      if self.actions[self.currentIdx][2] == 143:
-        x_ref = x_ref -popravek
-        y_ref = y_ref +popravek
-      
-      
-      v_max = 0.3
-      Kw = 2.5
-      Kgama = 4.0
-      Kv = 2.0
-      dist_min = 0.1
-      dist_to = sqrt((self.x -x_ref)**2+(self.y -y_ref)**2)
-      
-      fi_ref = atan2((y_ref-self.y),(x_ref-self.x))
-      
-      e_fi = wrapToPi(fi_ref - self.fi)
-      
-      
-      w = Kw * (e_fi)
-      v = Kv * dist_to 
-      
-      if abs(v) > v_max:
-        v = sign(v) * v_max
-      
-      
-      vs = sqrt(w**2 * self.D**2 + v**2)
-      gama_ref = atan2(w*self.D, v)
-      
-      e_gama = wrapToPi(gama_ref - self.gama)
-      ws = Kgama * e_gama
-    
-      brake = (dist_to/dist_min)**3
-      if brake > 1:
-        brake = 1
-      
-      print(str(brake))
-      
-      
-      vs = v_max * vs / (abs(vs)+abs(ws))
-      
-      
-      ws = brake*ws
-      vs = brake*vs*abs(cos(e_gama))
-
-    
-      
-      
-      self.setVel(vs, ws)
+        sledenje_tock = True
+        self.setVel(vs, ws)
            
-     
-      
-      
-      
-      
-      
-      
+
     
-    elif left == None or right == None:
+    if left == None or right == None:
+      # Ni vrednosti senzorja
       #print('None')
       pass
       
-    elif  self.sled_rob != 0:
+    elif  self.sled_rob != 0 and not sledenje_tock:
       
-      
+      # Parametri regulatroja sledenja črti
       Kwp = 2
       
       Kvd = 0.5
@@ -327,15 +335,12 @@ class WmrRos(Wmr):
       
         
       ws = Kwp * line_error
-      vs = Kvp #+ Kvd * (self.old_error - line_error)
+      vs = Kvp 
     
       self.setVel(vs, ws)
-    
-      
-      self.old_error = line_error
+      #self.old_error = line_error
      
     
-    #print('Leva, desna: ' + str(left) + ' ' + str(right) + ' Senzor: ' + str(sensors))
   def _handleActions(self, msg):
     print(msg.data)
     a = msg.data.split(';')
@@ -345,14 +350,6 @@ class WmrRos(Wmr):
     if self.currentIdx == 0:
       self.sled_rob = self.actions[self.currentIdx][0]
 
-    
-
-    
-    
-    
-    
-        
-        
   
   
 if __name__ == '__main__':
