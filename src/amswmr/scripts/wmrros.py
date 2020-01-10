@@ -170,7 +170,12 @@ class WmrRos(Wmr):
           self.currentIdx = self.currentIdx + 1
           self.prepotovana_pot = 0.0 
         #Popravilo tocke 106
-        if  (self.actions[self.currentIdx][2] == 106) and (self.prepotovana_pot > self.actions[self.currentIdx][1]/1000.0 - 0.04):
+        if  (self.actions[self.currentIdx][2] == 106) and (self.prepotovana_pot > self.actions[self.currentIdx][1]/1000.0 - 0.05):
+          print('Imag reached')
+          self.currentIdx = self.currentIdx + 1
+          self.prepotovana_pot = 0.0 
+        #Popravilo tocke 109
+        if  (self.actions[self.currentIdx][2] == 109) and (self.prepotovana_pot > self.actions[self.currentIdx][1]/1000.0 + 0.05):
           print('Imag reached')
           self.currentIdx = self.currentIdx + 1
           self.prepotovana_pot = 0.0 
@@ -189,7 +194,7 @@ class WmrRos(Wmr):
           # Po 80% prepotovane poti začni iskati črto
 
           if self.prepotovana_pot > 0.8 * self.actions[self.currentIdx][1]/1000.0:
-            if not (left == None or right == None) and right < 0 :
+            if not (left == None or right == None) and right > 0 :
               print('Pot spet najdena')
 
               self.currentIdx = self.currentIdx + 1
@@ -199,8 +204,8 @@ class WmrRos(Wmr):
           # Po 80% prepotovane poti začni iskati črto
 
           if self.prepotovana_pot > 0.8 * self.actions[self.currentIdx][1]/1000.0:
-
-            if not (left == None or right == None) and left > 0 :
+            print(left)
+            if not (left == None or right == None) and left < 0 :
               print('Pot spet najdena')
 
               self.currentIdx = self.currentIdx + 1
@@ -245,7 +250,8 @@ class WmrRos(Wmr):
     if self.sled_rob == 'sredina':
       next_Tag = self.actions[self.currentIdx][2]
       if not ((next_Tag == 142) or (next_Tag == 143)):
-        line_error = (left + right)/2
+        line_error = 0.5*(left + right)/2
+        #print(line_error)
       else:
         
         
@@ -333,10 +339,9 @@ class WmrRos(Wmr):
       Kvp = 0.1
       
       
-        
       ws = Kwp * line_error
       vs = Kvp 
-    
+      #print(ws)
       self.setVel(vs, ws)
       #self.old_error = line_error
      
